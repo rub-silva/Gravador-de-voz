@@ -63,6 +63,7 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
 </section>
 </main>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const tracks=[];let cur=-1,mr=null,stream=null,chunks=[];
@@ -134,6 +135,16 @@ async function toWav(blob){
   const buf=await ctx.decodeAudioData(await blob.arrayBuffer());ctx.close();
   const n=buf.length,sr=buf.sampleRate,ch=buf.numberOfChannels,d=new Float32Array(n);
   for(let c=0;c<ch;c++){const x=buf.getChannelData(c);for(let i=0;i<n;i++)d[i]+=x[i]/ch}
+  if(window.lamejs){
+    try{
+      const pcm=new Int16Array(n);
+      for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,d[i]));pcm[i]=s<0?s*32768:s*32767}
+      const enc=new lamejs.Mp3Encoder(1,sr,160),parts=[];
+      for(let i=0;i<n;i+=1152){const b=enc.encodeBuffer(pcm.subarray(i,i+1152));if(b.length)parts.push(b)}
+      parts.push(enc.flush());
+      return new Blob(parts,{type:'audio/mpeg'});
+    }catch(err){}
+  }
   const out=new DataView(new ArrayBuffer(44+n*2));
   const w=(o,s)=>{for(let i=0;i<s.length;i++)out.setUint8(o+i,s.charCodeAt(i))};
   w(0,'RIFF');out.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');out.setUint32(16,16,true);
@@ -144,14 +155,14 @@ async function toWav(blob){
   return new Blob([out],{type:'audio/wav'});
 }
 
-const fname=()=>'voz - '+tracks[cur].name+'.wav';
+const fname=()=>'voz - '+tracks[cur].name+(tracks[cur].wav.type==='audio/mpeg'?'.mp3':'.wav');
 $('#dl').onclick=()=>{
   const a=document.createElement('a');a.href=URL.createObjectURL(tracks[cur].wav);a.download=fname();
   document.body.append(a);a.click();a.remove();
 };
 const shareBtn=$('#share');
 if(navigator.canShare&&navigator.canShare({files:[new File([''],'a.wav',{type:'audio/wav'})]}))shareBtn.classList.remove('hide');
-shareBtn.onclick=()=>navigator.share({files:[new File([tracks[cur].wav],fname(),{type:'audio/wav'})]}).catch(()=>{});
+shareBtn.onclick=()=>navigator.share({files:[new File([tracks[cur].wav],fname(),{type:tracks[cur].wav.type})]}).catch(()=>{});
 </script>
 </body>
 </html>
