@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gravador de voz</title>
+<style>
+:root{--bg:#f3f5f8;--card:#fff;--ink:#1d2433;--mute:#5b6478;--line:#d5dae3;--rec:#c8312f;--ok:#1f7a63;--sel:#e4ebf7}
+@media (prefers-color-scheme:dark){:root{--bg:#141a26;--card:#1d2433;--ink:#eef1f6;--mute:#a3acbf;--line:#364057;--rec:#e5605d;--ok:#4bb89a;--sel:#2a3652}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:34rem;margin:0 auto;padding:1.25rem}
+h1{font-size:1.5rem;margin:.5rem 0 1rem}
+h2{font-size:1.1rem;margin:0 0 .5rem}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem;margin-bottom:1rem}
+p{margin:.25rem 0 .75rem;color:var(--mute)}
+button,label.btn{font:inherit;font-weight:600;border:2px solid var(--ink);background:transparent;color:var(--ink);border-radius:10px;padding:.75rem 1rem;cursor:pointer;display:inline-block;min-height:3rem}
+button:focus-visible,label.btn:focus-visible-within,input:focus-visible+span{outline:3px solid var(--ink);outline-offset:2px}
+#rec{width:100%;background:var(--rec);border-color:var(--rec);color:#fff;font-size:1.25rem;padding:1rem}
+#rec[disabled]{opacity:.45;cursor:not-allowed}
+#rec.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+ul{list-style:none;margin:0;padding:0}
+li button{width:100%;text-align:left;border-color:var(--line);margin-bottom:.5rem}
+li button.sel{background:var(--sel);border-color:var(--ink)}
+li .ok{color:var(--ok);float:right}
+audio{width:100%;margin:.5rem 0}
+.row{display:flex;gap:.5rem;flex-wrap:wrap}
+#msg{color:var(--rec);font-weight:600}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+.hide{display:none}
+@media (prefers-reduced-motion:no-preference){#rec.on{animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.7}}}
+</style>
+</head>
+<body>
+<main>
+<h1>Gravador de voz</h1>
+
+<section>
+  <h2>1. Coloque os áudios guia</h2>
+  <p>Escolha todos os áudios de uma vez. Eles aparecem na lista abaixo.</p>
+  <label class="btn" for="files">Escolher áudios</label>
+  <input id="files" type="file" accept="audio/*" multiple>
+</section>
+
+<section>
+  <h2>2. Escolha uma guia e grave</h2>
+  <p><strong>Use fone de ouvido.</strong> Sem fone, a guia entra na gravação.</p>
+  <button id="test" style="margin-bottom:1rem">Testar microfone</button>
+  <ul id="list"><li><p>Nenhuma guia ainda.</p></li></ul>
+  <audio id="guide" class="hide"></audio>
+  <button id="rec" disabled>Gravar</button>
+  <p id="msg" role="status"></p>
+</section>
+
+<section id="takeBox" class="hide">
+  <h2 id="takeTitle">Sua gravação</h2>
+  <audio id="take" controls></audio>
+  <div class="row">
+    <button id="dl">Baixar gravação</button>
+    <button id="share" class="hide">Enviar</button>
+  </div>
+</section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const tracks=[];let cur=-1,mr=null,stream=null,chunks=[];
+const guide=$('#guide'),recBtn=$('#rec'),msg=$('#msg');
+
+$('#files').onchange=e=>{
+  for(const f of e.target.files)tracks.push({name:f.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(f),wav:null});
+  e.target.value='';render();if(cur<0&&tracks.length)pick(0);
+};
+
+function render(){
+  const ul=$('#list');ul.innerHTML='';
+  tracks.forEach((t,i)=>{
+    const li=document.createElement('li'),b=document.createElement('button');
+    b.textContent=t.name;b.className=i===cur?'sel':'';
+    if(t.wav){const s=document.createElement('span');s.className='ok';s.textContent='Gravada';b.append(s)}
+    b.onclick=()=>pick(i);li.append(b);ul.append(li);
+  });
+}
+
+function pick(i){
+  if(mr&&mr.state==='recording')return;
+  cur=i;guide.src=tracks[i].url;guide.load();recBtn.disabled=false;msg.textContent='';
+  showTake();render();
+}
+
+function showTake(){
+  const t=tracks[cur],box=$('#takeBox');
+  if(!t||!t.wav){box.classList.add('hide');return}
+  box.classList.remove('hide');
+  $('#take').src=URL.createObjectURL(t.wav);
+  $('#takeTitle').textContent='Gravação: '+t.name;
+}
+
+recBtn.onclick=async()=>{
+  if(mr&&mr.state==='recording'){mr.stop();return}
+  if(!navigator.mediaDevices||!window.MediaRecorder){msg.textContent='Este navegador não grava. Abra o arquivo no Chrome ou no Edge.';return}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(err){msg.textContent='Não consegui usar o microfone. Toque em Permitir quando o navegador pedir.';return}
+  const i=cur;chunks=[];mr=new MediaRecorder(stream);
+  mr.ondataavailable=e=>chunks.push(e.data);
+  mr.onstop=async()=>{
+    guide.pause();stream.getTracks().forEach(t=>t.stop());
+    recBtn.textContent='Gravar';recBtn.classList.remove('on');msg.textContent='Preparando o arquivo...';
+    try{tracks[i].wav=await toWav(new Blob(chunks,{type:mr.mimeType}));msg.textContent='Pronto! Ouça abaixo e baixe.'}
+    catch(err){msg.textContent='Algo deu errado ao preparar o arquivo. Grave de novo.'}
+    if(i===cur)showTake();render();
+  };
+  guide.currentTime=0;mr.start();
+  try{await guide.play()}catch(err){}
+  recBtn.textContent='Parar';recBtn.classList.add('on');msg.textContent='Gravando...';
+};
+$('#test').onclick=async()=>{
+  if(!navigator.mediaDevices){msg.textContent='Este navegador não permite gravar aqui. Abra o link no Chrome (Android) ou no Safari (iPhone).';return}
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({audio:true});
+    s.getTracks().forEach(t=>t.stop());
+    msg.style.color='var(--ok)';msg.textContent='Microfone liberado. Pode gravar!';
+  }catch(err){
+    msg.style.color='';msg.textContent='Microfone bloqueado. Toque em Permitir quando o navegador perguntar. Se não aparecer, libere o microfone nas configurações do site.';
+  }
+};
+guide.onended=()=>{if(mr&&mr.state==='recording')mr.stop()};
+
+async function toWav(blob){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const buf=await ctx.decodeAudioData(await blob.arrayBuffer());ctx.close();
+  const n=buf.length,sr=buf.sampleRate,ch=buf.numberOfChannels,d=new Float32Array(n);
+  for(let c=0;c<ch;c++){const x=buf.getChannelData(c);for(let i=0;i<n;i++)d[i]+=x[i]/ch}
+  const out=new DataView(new ArrayBuffer(44+n*2));
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)out.setUint8(o+i,s.charCodeAt(i))};
+  w(0,'RIFF');out.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');out.setUint32(16,16,true);
+  out.setUint16(20,1,true);out.setUint16(22,1,true);out.setUint32(24,sr,true);
+  out.setUint32(28,sr*2,true);out.setUint16(32,2,true);out.setUint16(34,16,true);
+  w(36,'data');out.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,d[i]));out.setInt16(44+i*2,s<0?s*32768:s*32767,true)}
+  return new Blob([out],{type:'audio/wav'});
+}
+
+const fname=()=>'voz - '+tracks[cur].name+'.wav';
+$('#dl').onclick=()=>{
+  const a=document.createElement('a');a.href=URL.createObjectURL(tracks[cur].wav);a.download=fname();
+  document.body.append(a);a.click();a.remove();
+};
+const shareBtn=$('#share');
+if(navigator.canShare&&navigator.canShare({files:[new File([''],'a.wav',{type:'audio/wav'})]}))shareBtn.classList.remove('hide');
+shareBtn.onclick=()=>navigator.share({files:[new File([tracks[cur].wav],fname(),{type:'audio/wav'})]}).catch(()=>{});
+</script>
+</body>
+</html>
