@@ -54,6 +54,7 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
 
 <section id="takeBox" class="hide">
   <h2 id="takeTitle">Sua gravação</h2>
+  <p>Não gostou? Toque em <strong>Gravar de novo</strong>. A gravação anterior é apagada e substituída pela nova.</p>
   <audio id="take" controls></audio>
   <div class="row">
     <button id="dl">Baixar gravação</button>
@@ -90,6 +91,7 @@ function pick(i){
 
 function showTake(){
   const t=tracks[cur],box=$('#takeBox');
+  recBtn.textContent=t&&t.wav?'Gravar de novo (apaga a anterior)':'Gravar';
   if(!t||!t.wav){box.classList.add('hide');return}
   box.classList.remove('hide');
   $('#take').src=URL.createObjectURL(t.wav);
@@ -113,7 +115,7 @@ recBtn.onclick=async()=>{
   };
   guide.currentTime=0;mr.start();
   try{await guide.play()}catch(err){}
-  recBtn.textContent='Parar';recBtn.classList.add('on');msg.textContent='Gravando...';
+  recBtn.textContent='Parar';recBtn.classList.add('on');msg.textContent=tracks[i].wav?'Gravando de novo. A anterior será substituída.':'Gravando...';
 };
 $('#test').onclick=async()=>{
   if(!navigator.mediaDevices){msg.textContent='Este navegador não permite gravar aqui. Abra o link no Chrome (Android) ou no Safari (iPhone).';return}
